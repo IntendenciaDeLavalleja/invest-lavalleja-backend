@@ -12,11 +12,10 @@ Este repositorio contiene exclusivamente el backend, situado en la raíz para co
 - `graph.py`, `advisor.py`, `tools.py` y `prompt.py`: agente y herramientas.
 - `rag.py`, `store.py` y `lexical.py`: recuperación e índice vectorial.
 - `admin_*.py` y `knowledge_*.py`: administración, 2FA, documentos y versiones.
+- `manage.py`, `asgi.py`, `db_migrations.py` y `migrations/`: comandos de operación, arranque y esquemas versionados.
 - `ingest.py` y `rag-data/`: extracción Word y ubicación local de documentos fuente.
 - `scripts/` y `tests/`: diagnóstico y validación.
 - `Dockerfile`, `docker/` y `compose.yaml`: contenedor Python independiente.
-
-## Inicio con Docker
 
 ## Preparación y comandos
 
@@ -49,6 +48,8 @@ python -m manage create-admin "Nombre" correo@tu-dominio.uy contraseña-de-admin
 El acceso web está en **`/admin/login` del frontend**; después de 2FA se usa `/admin/`. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también crea cuentas, modifica roles y consulta auditoría. Cambiar un rol revoca las sesiones del usuario y siempre debe quedar un superadministrador activo.
 
 El backend publica únicamente la API. `/`, `/admin/login`, `/docs`, `/redoc` y `/openapi.json` devuelven 404; las rutas administrativas privadas requieren 2FA. Las rutas desconocidas bajo `/admin/` del frontend devuelven 404.
+
+## Inicio con Docker
 
 Copiar `.env.example` a `.env` y configurar las variables antes de ejecutar:
 
