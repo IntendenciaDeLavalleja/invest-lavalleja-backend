@@ -1,0 +1,30 @@
+# Configuración privada
+.env
+.env.*
+!.env.example
+
+# Entornos, dependencias y cachés Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Datos privados y artefactos locales
+admin-data/
+index/
+.model_cache/
+rag-data/*
+!rag-data/.gitkeep
+*.sqlite*
+*.db
+
+# Logs y archivos del sistema
+*.log
+.DS_Store
+Thumbs.db
