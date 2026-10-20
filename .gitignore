@@ -1,30 +1,20 @@
-# Configuración privada
 .env
 .env.*
 !.env.example
-
-# Entornos, dependencias y cachés Python
-venv/
+data/
+!tests/data/
+!tests/data/retrieval_cases.json
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-.coverage
-htmlcov/
-
-# Datos privados y artefactos locales
-admin-data/
-index/
-.model_cache/
-rag-data/*
-!rag-data/.gitkeep
 *.sqlite*
 *.db
-
-# Logs y archivos del sistema
 *.log
-.DS_Store
-Thumbs.db
+reports/preview/
+samples/Invest_Lavalleja_2026.gianna.json
+docs/Invest_Lavalleja_2026.gianna.json
+# Knowledge may contain institutional internal material. Import it in the admin; don't publish it accidentally.
+knowledge/
+backups/

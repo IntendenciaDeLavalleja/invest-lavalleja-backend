@@ -1,20 +1,20 @@
-# syntax=docker/dockerfile:1
-FROM python:3.14-slim-bookworm
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    ADMIN_DATA_DIR=/data/admin MODEL_CACHE=/data/models INDEX_DIR=/data/legacy-index \
-    ADMIN_COOKIE_SECURE=true OMP_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false
-WORKDIR /app/backend
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
+    HF_HOME=/app/data/models/huggingface XDG_CACHE_HOME=/app/data/cache HF_XET_CACHE=/app/data/models/xet
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 gianna && useradd --uid 10001 --gid gianna --no-create-home gianna \
-    && mkdir -p /data/admin /data/models /data/legacy-index /data/home \
-    && chown -R gianna:gianna /data && usermod --home /data/home gianna
-COPY requirements.lock ./requirements.lock
-RUN pip install --no-cache-dir -r requirements.lock
-COPY --chown=gianna:gianna . ./
-COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
-USER gianna
-EXPOSE 8010
-HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/api/health', timeout=4)"
-ENTRYPOINT ["/entrypoint.sh"]
+    && groupadd --gid 10001 gianna && useradd --uid 10001 --gid 10001 --create-home gianna \
+    && mkdir -p /app/data && chown -R gianna:gianna /app
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY --chown=gianna:gianna gianna /app/gianna
+COPY --chown=gianna:gianna scripts /app/scripts
+COPY --chown=gianna:gianna wsgi.py gunicorn.conf.py /app/
+USER 10001:10001
+RUN opt_in_out --opt_out
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live',timeout=3)" || exit 1
+CMD ["gunicorn","--config","gunicorn.conf.py","wsgi:app"]

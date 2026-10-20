@@ -1,94 +1,132 @@
-# Backend de Gianna
+# Gianna · Invest Lavalleja
 
-API Python autónoma: FastAPI, Uvicorn, LangGraph, Ollama Cloud, embeddings, reranker, LanceDB/NumPy y administración con 2FA. No sirve el frontend ni necesita Nginx.
+**Versión 1.0.0-rc1 · 28 de septiembre de 2026 · Candidata para validación.**
 
-[Arquitectura y flujos del sistema](https://github.com/NebyX1/invest-lavalleja-rag-chat/blob/main/Arquitectura.md): API, agente, recuperación, cupos, administración e indexación.
+Backend Python/Flask con administración web, doble factor, gestión editorial de bases de conocimiento, indexación híbrida CPU y chat público. Incluye el corpus convertido de la guía entregada y una isla React para integrar en el portal Astro. No se modificaron repositorios remotos.
 
-Este repositorio contiene exclusivamente el backend, situado en la raíz para construirlo directamente con Docker o Coolify. El [frontend de Invest Lavalleja](https://github.com/IntendenciaDeLavalleja/invest-lavalleja-frontend) se despliega como otro servicio.
+**Motor RAG actualizado · 19/10/2026:** Bekko OpenVINO CPU + Horizon ONNX CPU + LanceDB (cosine exacto y BM25 español). Preparación explícita de modelos, versiones con huella nueva y reindexación obligatoria. Ver [arquitectura y migración](docs/RAG_ENGINE.md). Los informes de septiembre que siguen describen verificaciones históricas.
 
-## Estructura
+**Estado conversacional:** Gianna usa `deepseek-v4.1-flash` en la pila local de prueba. Un harness distingue conversación, consulta RAG, preguntas externas, burlas, privacidad y pedidos dañinos antes de recuperar documentos. Las respuestas sobre inversión requieren fuentes; la conversación no muestra citas irrelevantes ni rechazos en tercera persona. La pila Docker de prueba humana está aislada y avisa que el contenido no fue revisado. La base operativa permanece sin publicación y no está validada para producción. Se aprobaron 106 pruebas Python, 12 pruebas de navegador de Gianna (escritorio y móvil) y una batería real de 16/16 diálogos; esos resultados no certifican exactitud factual. SMTP real y Coolify remoto no están validados. Consultar `reports/VALIDACION.md` y completar `docs/PUESTA_EN_MARCHA.md` antes de abrirla al público.
 
-- `main.py`, `chat_access.py` y `config.py`: API, acceso, cupos y configuración.
-- `graph.py`, `advisor.py`, `tools.py` y `prompt.py`: agente y herramientas.
-- `rag.py`, `store.py` y `lexical.py`: recuperación e índice vectorial.
-- `admin_*.py` y `knowledge_*.py`: administración, 2FA, documentos y versiones.
-- `manage.py`, `asgi.py`, `db_migrations.py` y `migrations/`: comandos de operación, arranque y esquemas versionados.
-- `ingest.py` y `rag-data/`: extracción Word y ubicación local de documentos fuente.
-- `scripts/` y `tests/`: diagnóstico y validación.
-- `Dockerfile`, `docker/` y `compose.yaml`: contenedor Python independiente.
+## Qué incluye
 
-## Preparación y comandos
+- Panel en español, responsive, con recursos locales y sin un segundo frontend Node para administrarlo.
+- Contraseña Argon2id, TOTP con QR, códigos de recuperación de un solo uso y alternativa de código por correo con SMTP TLS. Sesiones revocables y roles propietario, editor y consulta.
+- Cargar JSON canónico, JSONL autocontenido, DOCX, Markdown o TXT. Los documentos desconocidos entran como internos. Conversión en cola persistente, nunca publicación automática.
+- Editar texto, fuentes, tema, zonas, fechas, condiciones, audiencia y estado de cada registro. Búsqueda, filtros y aprobación del contenido público.
+- Crear versiones vectoriales inmutables, progreso por lotes, caché de embeddings, reintento y cancelación cooperativa. Una base nueva no interrumpe ni reemplaza automáticamente a la publicada.
+- Exploración de chunks reales, cantidad de tokens, contenido y metadatos. Mapa PCA 2D interactivo de hasta 1.200 puntos, con etiquetas temáticas: no es un clasificador ni una prueba de calidad.
+- Laboratorio de recuperación y chat, evaluación de recuperación con preguntas cargables, publicación con confirmación, retorno a versiones previamente publicadas y borrado protegido de una base con sus versiones.
+- Analítica agregada de consultas, latencia, tokens informados por el proveedor, referencias, feedback y temas recuperados. No se inventan montos facturados ni porcentajes de exactitud.
+- Chat público de prueba `/chat`; isla React activa en `../src/components/islands/GiannaChat.tsx`; `AgentHarness` controla rutas, respuestas de seguridad y acceso al RAG; contexto corto cifrado de hasta seis intercambios, botón para olvidar y límites de uso. Ambos inicios de sesión exigen CAPTCHA.
+- Compose, Dockerfile, scripts de arranque, copia/restauración de SQLite, migraciones y workflow de pruebas. No contiene tokens, contraseñas, embeddings precalculados ni un índice LanceDB precalculado.
 
-Ver [Instructions.txt](Instructions.txt). Desde la carpeta del backend:
+## Stack decidido
+
+```text
+Portal Astro / isla React
+        ↓
+Flask + Gunicorn + Jinja + SQLite WAL
+        ↓
+Bekko OpenVINO (384 dimensiones, CPU)
+        ↓
+LanceDB: cosine + BM25 español + RRF → Horizon cross-encoder
+        ↓
+Ollama Cloud API: Authorization Bearer desde OLLAMA_API_KEY
+```
+
+Un servicio persistente de backend: `api`; LanceDB se aloja junto a SQLite en el volumen de datos. El trabajo de indexación usa un hilo supervisado dentro del único proceso de la API y una cola SQLite durable. No se agregan Redis, Celery, MariaDB, MinIO, un servidor de embeddings ni un Ollama local. Bekko y Horizon comparten el control de inferencia CPU. LanceDB se ejecuta embebido.
+
+`D:\Ai Projects\chat-onnx-local` se tomó como referencia de separación navegador → API → proveedor y de interacción conversacional. Aquí la interfaz se adapta a una isla React en Astro y la API a RAG con citas; no se trasladó su SPA ni su servidor llama.cpp local.
+
+**Controlador de Gianna.** Primero aplica barreras locales para acusaciones directas sobre personas y pedidos explícitos de daño o ilícitos; las críticas a la asistente pasan a una respuesta conversacional contextual. Para los demás mensajes, el modelo propone una de seis rutas en JSON: `rag`, `chat`, `deescalate`, `allegation`, `refuse` u `out_of_scope`. El servidor valida la propuesta y solo `rag` puede consultar el índice público; una decisión inválida pide reformulación sin buscar. Las preguntas externas también reciben conversación natural, sin plantillas de “fuera del alcance”. Los saludos inequívocos evitan una clasificación. [Ollama Cloud no admite salidas con esquema](https://github.com/ollama/ollama/blob/main/docs/capabilities/structured-outputs.mdx), por lo que Python valida el JSON. `deepseek-v4.1-flash` se usa con `think: false`, probado contra el proveedor; otros modelos conservan `think: low`. Una respuesta documental sin citas válidas recibe un único intento de reparación con la misma evidencia; nunca se publican citas fabricadas como respaldo. Esto no sustituye pruebas adversariales continuas ni revisión humana de afirmaciones factuales.
+
+**Un proceso de Gunicorn.** No aumentar `workers` ni arrancar réplicas sin rediseñar la cola, los bloqueos de inferencia y los límites. El despliegue de SQLite necesita almacenamiento local persistente, no NFS compartido entre máquinas.
+
+## Arranque local con Docker
+
+Requisitos del equipo destino: Python 3 para generar `.env`, Docker con Compose y acceso a los registros de imágenes, PyPI, Hugging Face y Ollama Cloud.
+
+```bash
+python scripts/setup_env.py --local
+# Editar .env: poner OLLAMA_API_KEY. El modelo se puede elegir luego en el panel.
+docker compose -f compose.yaml -f compose.local.yaml up --build -d
+docker compose -f compose.yaml -f compose.local.yaml exec api flask --app wsgi create-admin
+```
+
+Abrir `http://localhost:8000/admin/login`. El comando solicita nombre, correo y contraseña sin imprimirla. En el primer ingreso, configurar TOTP y guardar los códigos de recuperación fuera del servidor. No hay usuario ni contraseña por defecto. En Windows está también `run.ps1`.
+
+Si hay SMTP configurado y se quiere el segundo factor por correo como en el Buzón Ciudadano, crear la cuenta con `flask --app wsgi create-admin --mfa email`. Sin SMTP, conservar TOTP; nunca desactivar el segundo factor para suplir la falta de correo.
+
+El panel permite trabajar con documentos antes de configurar Ollama. Para generar respuestas se necesita una clave válida y seleccionar un modelo que exista en el catálogo real. El botón **Cargar catálogo real de Ollama** evita adivinar nombres. Antes de indexar, ejecutar `docker compose run --rm api python -m scripts.prepare_models`. Las consultas solo leen los modelos locales verificados.
+
+### Prueba humana local del chat
+
+La instancia de prueba usa `compose.human-test.yaml`, el puerto **127.0.0.1:8001** y volúmenes SQLite/LanceDB distintos de los operativos. Nunca aplicar este override en Coolify. El modo de prueba rechaza hosts y orígenes no locales y muestra un aviso de guía no revisada en `/gianna/`. En la raíz Astro, `.env.local` debe contener `PUBLIC_GIANNA_API_BASE=http://localhost:8001`; no contiene secretos y está ignorado por Git. Iniciar o reiniciar `npm run dev` para que Astro lo tome.
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-# Completar .env antes de continuar.
-python -m manage db upgrade -d migrations
-python -m manage seed-data
-python -m manage create-admin "Nombre del admin" admin@tu-dominio.uy --super-admin
-python asgi.py
+# Desde backend/, con .env local configurado (incluida la clave de Ollama):
+docker compose -f compose.yaml -f compose.human-test.yaml --env-file .env up -d --build
+docker cp knowledge/invest_lavalleja_2026.gianna.json gianna-invest-human-test-api-1:/app/data/invest_lavalleja_2026.gianna.json
+docker compose -f compose.yaml -f compose.human-test.yaml --env-file .env exec -T api python -m scripts.enable_human_test /app/data/invest_lavalleja_2026.gianna.json
+docker compose -f compose.yaml -f compose.human-test.yaml --env-file .env restart api
 ```
 
-El comando de alta también admite los argumentos del ejemplo:
+Esperar a que `http://127.0.0.1:8001/api/config` indique `available: true` y `test_mode: true`; abrir `http://localhost:4321/gianna/`. El script selecciona **solo** los registros marcados públicos, verifica conteos de SQLite/LanceDB y activa exclusivamente el puntero de la pila aislada. Su marca de aprobación es técnica y **no** sustituye revisión editorial. No copiar su volumen ni su base de datos a producción. Las preguntas y fragmentos recuperados se envían a Ollama Cloud, así que no introducir datos confidenciales. Para detener solo la pila de prueba, usar `docker compose -f compose.yaml -f compose.human-test.yaml --env-file .env stop` (sin `down -v`).
 
-```powershell
-python -m manage create-admin "Nombre" correo@tu-dominio.uy contraseña-de-admin true
+La evaluación adversarial de diálogo se ejecuta **solo** por petición explícita, porque consume tokens de Ollama Cloud y usa la base técnica local: `docker compose -f compose.yaml -f compose.human-test.yaml --env-file .env exec -T api python -m scripts.evaluate_dialogue`. Cubre humor, crítica, propuestas personales, hechos externos, actualidad, actividad sensible, corrección, explotación/coerción, privacidad, inversión con seguimiento e inyección para forzar un beneficio fiscal. El script verifica rutas, ausencia de citas improcedentes y algunos fallos de redacción; no es un juez semántico ni una validación jurídica.
+
+## Primera base de conocimiento
+
+1. Obtener la guía fuente por un canal autorizado, convertirla localmente con `python scripts/convert_guide.py <archivo.docx> --output knowledge` y cargar `knowledge/invest_lavalleja_2026.gianna.json` en **Bases**. El JSON de trabajo queda fuera de Git (ver nota de GitHub al final).
+2. Abrir el borrador, revisar contenido y fuentes. La conversión contiene 271 registros: 196 públicos y 75 internos. Revisar y aprobar los registros públicos que correspondan.
+3. Crear la versión vectorial. Abrir su trabajo para ver progreso y errores. Esperar que finalice antes de probar o publicar.
+4. En la versión, revisar chunks, temas y mapa. Cargar `knowledge/pruebas_recuperacion.json` en la evaluación y usar el laboratorio.
+5. Seleccionar el modelo generativo en Ajustes y revisar manualmente las respuestas de los 12 casos de `knowledge/pruebas_respuestas_revision_humana.json`.
+6. Publicar desde una cuenta propietaria con segundo factor reciente. Esa acción cambia el puntero activo de forma transaccional; los borradores continúan sin afectar el chat.
+
+**Aprobar es una decisión editorial, no una verificación automática de veracidad o vigencia.** La guía conserva su corte del 18/09/2026. Sus normas, contactos y estadísticas no se actualizaron con información externa durante la conversión.
+
+Para importar la guía sin aprobarla desde la consola del contenedor, copiar el JSON a `/app/data` y ejecutar `python -m scripts.load_knowledge /app/data/invest_lavalleja_2026.gianna.json`. La opción `--technical-smoke` indexa el subconjunto público en una **SQLite de prueba separada, nunca publicada** y realiza una consulta real; `--evaluations /app/data/pruebas_recuperacion.json` añade la batería de recuperación. El smoke no sustituye la revisión y publicación desde el panel.
+
+## Configuración
+
+Los secretos permanecen en `.env` local o en las variables de ejecución de Coolify. El panel no puede leer ni modificar sus valores. `SECRET_KEY` y `ENCRYPTION_KEY` son diferentes y deben conservarse. Cambiar la clave de cifrado sin migración vuelve ilegibles los secretos TOTP y el contexto cifrado.
+
+Las variables operativas completas están en `.env.example`. Nombre, saludo, tono, aviso, modelo generativo, parámetros de recuperación, tamaño/solapamiento de chunks, límites y retención se administran desde Ajustes. Los modelos Bekko/Horizon y su espacio vectorial no se cambian con un selector genérico que pudiera mezclar vectores incompatibles.
+
+Las revisiones y artefactos están fijados en `gianna/services/neural.py`; el preparador verifica SHA-256. La aplicación detecta cambios de huella y exige una versión nueva.
+
+## Documentación
+
+- `docs/COOLIFY.md`: despliegue, variables, dominio y red privada.
+- `docs/MANUAL_ADMIN.md`: operación cotidiana y roles.
+- `docs/SEGURIDAD_Y_OPERACION.md`: controles, límites, copias y recuperación.
+- `docs/REVISION_DOCUMENTAL.md`: conversión, trazabilidad y límites de la fuente.
+- `docs/INVESTIGACION.md`: referencias técnicas primarias y decisiones.
+- `docs/PUESTA_EN_MARCHA.md`: comprobaciones reales pendientes.
+- `integration/README.md`: contrato de conexión; la implementación activa está en `../src/pages/gianna.astro` y `../src/components/islands/GiannaChat.tsx`.
+
+**GitHub:** el repositorio es público. `backend/samples/Invest_Lavalleja_2026.gianna.json`, `knowledge/` y el JSON de trabajo de la raíz de `better-rag/` quedan fuera de Git. El documento sectorial (`better-rag/Conocimiento_Sectorial_Lavalleja_2026_10_19.docx`) y su versión consolidada (`better-rag/consolidated/`) se publicaron por decisión del responsable del proyecto; antes de cualquier nueva subida conviene revisar la clasificación del material. La mención al ZIP anterior se refiere a una entrega separada, no a este repositorio. Para recrear el corpus de trabajo, obtener la guía fuente por un canal autorizado y seguir el comando local de conversión indicado arriba.
+- `reports/VALIDACION.md`: qué se ejecutó y qué no.
+
+## Pruebas en el equipo destino
+
+```bash
+python -m venv .venv
+# Activar .venv según el sistema operativo.
+python -m pip install -r requirements-test.txt
+python -m pytest -q
 ```
 
-`true` crea un superadministrador; `false`, un administrador. El primer usuario debe ser superadministrador. Las migraciones SQL se versionan con `PRAGMA user_version`, se aplican también al inicializar las bases y preservan los datos existentes. Los administradores anteriores conservan sus permisos como superadministradores.
+El workflow de GitHub prueba Python 3.12 y 3.13 y agrega revisión de dependencias. Está incluido, pero no se ejecutó desde esta entrega. Las dependencias directas están fijadas; falta resolver y congelar el árbol transitivo en el entorno destino después de verificar compatibilidad y vulnerabilidades.
 
-`seed-data` prepara las carpetas, la primera cuenta configurada por entorno y el índice previo, si existe. No genera contenido de inversión. Los comandos de migración y preparación requieren el backend detenido; la creación de cuentas puede hacerse con el servicio activo.
+## Límites de alcance
 
-## Panel y permisos
+No hay editor de temas visuales sin código, passkeys/WebAuthn, recuperación por correo de contraseñas, OCR/PDF, buscador web autónomo, entrenamiento del LLM, analítica comercial de inversiones ejecutadas ni un sistema de gestión de expedientes. El borrado se realiza por base completa, no mediante un botón independiente para cada versión histórica. La publicación solo usa la colección pública, incluso en el laboratorio; el anexo interno queda disponible a los administradores como material editorial.
 
-El acceso web está en **`/admin/login` del frontend**; después de 2FA se usa `/admin/`. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también crea cuentas, modifica roles y consulta auditoría. Cambiar un rol revoca las sesiones del usuario y siempre debe quedar un superadministrador activo.
+Validar que una cita existe no demuestra que respalda una afirmación. El RAG implementa aislamiento, trazabilidad y abstención, no una garantía de corrección jurídica o factual. El contenido enviado a Ollama incluye la consulta y las piezas públicas seleccionadas; no es un servicio completamente local.
 
-El login requiere resolver un captcha numérico antes del envío del código por correo. El backend genera una suma, guarda el resultado con HMAC ligado a la sesión y consume el desafío en una transacción. Vence en cinco minutos; el formulario permite cambiar el cálculo y lo renueva tras un intento fallido. La respuesta no se incluye en el JSON de la sesión.
+## Código y materiales
 
-El backend publica únicamente la API. `/`, `/admin/login`, `/docs`, `/redoc` y `/openapi.json` devuelven 404; las rutas administrativas privadas requieren 2FA. Las rutas desconocidas bajo `/admin/` del frontend devuelven 404.
-
-## Inicio con Docker
-
-Copiar `.env.example` a `.env` y configurar las variables antes de ejecutar:
-
-```sh
-docker compose up --build -d
-```
-
-O construir sólo esta carpeta:
-
-```sh
-docker build -t invest-backend .
-```
-
-## Despliegue en Coolify
-
-Seleccionar Dockerfile, directorio base `/`, Dockerfile `/Dockerfile`, puerto interno **8010** y healthcheck **/api/health**. Montar un volumen persistente **/data** con UID/GID **10001**. Usar un worker y una réplica para la activación del conocimiento existente.
-
-Configurar `CORS_ORIGINS` y `ADMIN_ALLOWED_ORIGINS` con el origen HTTPS del frontend, sin barra final, y `PROXY_TRUSTED_IPS` con la red exacta del proxy. El frontend conecta mediante `BACKEND_URL` para el proxy Nginx o `VITE_API_URL` para CORS directo.
-
-Definir `OLLAMA_API_KEY`, `OLLAMA_MODEL`, una `ADMIN_SECRET_KEY` estable de al menos 32 caracteres y las variables SMTP exclusivamente en el backend. `ADMIN_EMAIL` y `ADMIN_PASSWORD` permiten crear la primera cuenta; retirar la contraseña del entorno después del primer arranque.
-
-Una instalación nueva arranca sin conocimiento: el administrador debe cargar el Word o un JSONL validado desde el panel del frontend. Hasta entonces, la salud informa `knowledge_ready=false` y el chat devuelve 503. El índice existente se adopta si se monta en `/data/legacy-index`; los modelos se guardan en `/data/models`.
-
-## Persistencia
-
-No persiste conversaciones. `chat-quota.sqlite3` conserva exclusivamente contadores por IP/sesión con hashes HMAC: 20 consultas aceptadas y 600 segundos de espera al agotarlas. SQLite también conserva la administración, sus sesiones y las versiones de documentos.
-
-## Diagnóstico y pruebas
-
-```sh
-python -m pip install -r requirements-dev.txt
-python -m pytest -q tests
-python scripts/check_smtp.py
-```
-
-La comprobación SMTP valida TLS y autenticación sin enviar correo. Para uso local sin Docker, dejar las rutas de datos por defecto y usar `ADMIN_COOKIE_SECURE=false` sólo en HTTP local.
-
-Las pruebas de integración en `tests/deployment/` utilizan imágenes separadas de frontend y backend, proveedores de prueba y un índice local. Sus requisitos y resultados están en el [informe de validación de la integración](https://github.com/NebyX1/invest-lavalleja-rag-chat/blob/main/PRODUCTION-VALIDATION.md).
-
-Ver la [guía de despliegue y administración](https://github.com/NebyX1/invest-lavalleja-rag-chat/blob/main/Admin-y-Coolify.md).
+Implementación original inspirada en el patrón funcional del Buzón Ciudadano; no es una copia de su código ni de su `.env`. La guía aportada conserva su autoría y clasificación. Las licencias de bibliotecas, modelos y cualquier material institucional deben revisarse en el despliegue. `knowledge/` está excluido de Git por precaución, aunque se entrega dentro del ZIP para cargarlo administrativamente.
