@@ -1,5 +1,13 @@
 # Informe de validación de la entrega
 
+## Formularios de acceso y segundo factor: 403 por origen nulo · 21/10/2026
+
+Se reprodujo el rechazo con un formulario HTML nativo en Chromium contra `https://mapi.invest.lavalleja.uy`. La respuesta incluía `Referrer-Policy: no-referrer`; el navegador enviaba `Origin: null` y el middleware devolvía 403 antes de comprobar credenciales o códigos. La comprobación HTTP anterior había fijado manualmente el origen y no reproducía ese comportamiento del navegador. Se cambió la cabecera a `same-origin`: conserva el origen de los formularios propios y omite las referencias hacia otros sitios. Se mantienen la comparación estricta de origen, CSRF, CSP, cookies seguras y segundo factor. No se añadieron variables al entorno.
+
+Verificación heredada de la corrección: **280 pruebas Python aprobadas y 3 omitidas** por ausencia del paquete documental privado; una advertencia de deprecación de PydanticGraph. Las regresiones completan login y segundo factor TOTP/correo con HTTPS terminado en proxy. Orígenes `null`, del portal y ajenos siguen rechazados; CSRF ausente se rechaza sin consumir el intento MFA. Chromium anónimo confirmó que `no-referrer` causa 403 y que `same-origin` produce la redirección esperada. La imagen Docker corregida completó CAPTCHA, login, enrolamiento TOTP y acceso al panel con MariaDB desechable; la API local está saludable. El ensayo no envió códigos reales ni modificó el servidor público.
+
+Publicada en la rama `codex/fix-admin-form-origin` de este repositorio. **No desplegada en Coolify**: el dominio público seguirá sirviendo la cabecera previa hasta que se integre la rama y se despliegue una nueva imagen. La prueba local no equivale a un inicio de sesión autenticado en producción.
+
 ## Alta de administradores compatible con Buzón Ciudadano · 21/10/2026
 
 El comando `python -m flask create-admin NOMBRE CORREO CONTRASEÑA [true|false]` permite crear ambos perfiles, también sin `--app`. `true` selecciona `owner` y `false` selecciona `editor`, de acuerdo con el control de permisos actual. Se mantienen la autenticación de doble factor y el modo interactivo previo. La contraseña se almacena con Argon2id, no se imprime ni se escribe en la auditoría. No se cambiaron las variables de entorno ni los roles existentes.
