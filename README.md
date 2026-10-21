@@ -59,6 +59,17 @@ Antes de ejecutar una importación antigua, detener la API y usar `scripts/migra
 
 Si hay SMTP configurado y se quiere el segundo factor por correo como en el Buzón Ciudadano, crear la cuenta con `flask --app wsgi create-admin --mfa email`. Sin SMTP, conservar TOTP; nunca desactivar el segundo factor para suplir la falta de correo.
 
+### Crear administradores y superadministradores
+
+El comando mantiene la sintaxis de Buzón Ciudadano; ejecutarlo desde `backend/` o dentro del contenedor API:
+
+```bash
+python -m flask create-admin "Nombre completo" "superadmin@example.com" "contraseña-de-al-menos-12-caracteres" true
+python -m flask create-admin "Nombre completo" "admin@example.com" "otra-contraseña-de-al-menos-12-caracteres" false
+```
+
+Reemplazar los valores de ejemplo. `true` crea un superadministrador (`owner`, Propietario en el panel); `false` crea un administrador (`editor`, Editor). Omitir el booleano equivale a `false`. Para correo como segundo factor, añadir `--mfa email` si SMTP está configurado. El alta interactiva anterior sigue disponible sin argumentos y crea un superadministrador con la contraseña oculta. Con URL `host.docker.internal`, ejecutar dentro del contenedor; la dirección no está disponible para Python nativo de Windows en este equipo. Las contraseñas posicionales pueden quedar en el historial de la terminal.
+
 El panel permite trabajar con documentos antes de configurar Ollama. Para generar respuestas se necesita una clave válida y seleccionar un modelo que exista en el catálogo real. El botón **Cargar catálogo real de Ollama** evita adivinar nombres. Antes de indexar, ejecutar `docker compose run --rm api python -m scripts.prepare_models`. Las consultas solo leen los modelos locales verificados.
 
 ### Prueba humana local del chat

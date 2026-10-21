@@ -1,5 +1,11 @@
 # Informe de validación de la entrega
 
+## Alta de administradores compatible con Buzón Ciudadano · 21/10/2026
+
+El comando `python -m flask create-admin NOMBRE CORREO CONTRASEÑA [true|false]` permite crear ambos perfiles, también sin `--app`. `true` selecciona `owner` y `false` selecciona `editor`, de acuerdo con el control de permisos actual. Se mantienen la autenticación de doble factor y el modo interactivo previo. La contraseña se almacena con Argon2id, no se imprime ni se escribe en la auditoría. No se cambiaron las variables de entorno ni los roles existentes.
+
+La suite ejecutada en el checkout local aprobó **278 pruebas** y omitió 3 por la ausencia del paquete documental privado. Una prueba Docker en una instancia MariaDB desechable ejercitó el comando Flask real, el booleano omitido, duplicados, entradas inválidas, inicio de sesión con CAPTCHA y TOTP y los permisos HTTP de ambos perfiles. El contenedor local actualizado respondió HTTP 200 en `/health/live`, `/health/ready` y `/admin/login`; los datos de cuentas de Gianna siguieron intactos.
+
 ## Una única conexión MariaDB · 21/10/2026
 
 Se retiró `DATABASE_URL_HUMAN_TEST` del `.env` local, la plantilla y Compose. Cada instalación usa únicamente `DATABASE_URL`; el archivo canónico tiene **15 campos**. El generador, el simplificador, el aprovisionamiento y el importador SQLite/MariaDB siguen ese contrato. El simplificador solo reconoce el nombre retirado como entrada antigua para eliminarlo; conserva la URL principal salvo reemplazo explícito. El aprovisionamiento crea una única base dedicada. El README principal ahora describe el arranque habitual y la publicación desde el panel; las pruebas humanas son una opción de desarrollo separada.
