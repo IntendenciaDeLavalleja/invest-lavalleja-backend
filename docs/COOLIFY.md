@@ -73,7 +73,9 @@ Reemplazar los valores de ejemplo. `true` crea un superadministrador (`owner`, P
 
 Al desplegar esta versión, la migración cambia las cuentas existentes a segundo factor por correo, conserva sus contraseñas y permisos y revoca las sesiones y los desafíos del autenticador anterior. No hay que recrear cuentas ni cambiar claves del entorno. Para recibir un nuevo código, iniciar sesión nuevamente; los códigos anteriores quedan invalidados.
 
-En Ajustes, cargar el catálogo real de Ollama y elegir el modelo. Importar el JSON canónico, aprobar, indexar, evaluar y publicar según el manual. Ejecutar `docker compose run --rm api python -m scripts.prepare_models` para la descarga explícita desde Hugging Face. La API usa Ollama para responder y lee los modelos locales.
+En Ajustes, cargar el catálogo real de Ollama y elegir el modelo. Importar el JSON canónico, aprobar, indexar, evaluar y publicar según el manual. En la terminal del contenedor **api**, ejecutar `python -m scripts.prepare_models --model-dir /app/data/models`. El comando verifica los artefactos y luego inicializa Bekko y Horizon y ejecuta una inferencia de prueba. Para revisar modelos ya descargados sin llamar a Hugging Face, ejecutar `python -m scripts.check_model_runtime`. No reintentar la vectorización si la comprobación no termina con `Verificación de inferencia Bekko/Horizon superada`.
+
+Durante la carga, los logs del backend informan la etapa actual: verificación de manifiestos, tokenizadores, sesión ONNX de Horizon o compilación OpenVINO de Bekko. Si Gunicorn reinicia un worker con `SIGSEGV`, revisar la última etapa registrada; no tratarlo como demora de vectorización ni repetir el trabajo a ciegas. La comprobación independiente de modelos ejecuta los mismos artefactos y motores en el contenedor sin iniciar trabajos ni modificar la base.
 
 ## Recursos y reproducibilidad
 
