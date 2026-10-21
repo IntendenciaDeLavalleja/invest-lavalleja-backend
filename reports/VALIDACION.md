@@ -1,5 +1,20 @@
 # Informe de validación de la entrega
 
+## Una única conexión MariaDB · 21/10/2026
+
+Se retiró `DATABASE_URL_HUMAN_TEST` del `.env` local, la plantilla y Compose. Cada instalación usa únicamente `DATABASE_URL`; el archivo canónico tiene **15 campos**. El generador, el simplificador, el aprovisionamiento y el importador SQLite/MariaDB siguen ese contrato. El simplificador solo reconoce el nombre retirado como entrada antigua para eliminarlo; conserva la URL principal salvo reemplazo explícito. El aprovisionamiento crea una única base dedicada. El README principal ahora describe el arranque habitual y la publicación desde el panel; las pruebas humanas son una opción de desarrollo separada.
+
+En este equipo, la única URL conserva exactamente la conexión de la API local que ya estaba funcionando. Se verificó igualdad de todos los demás valores del `.env`, incluidas las claves y credenciales, y se guardó un respaldo local ignorado por Git y Docker. No se migraron, eliminaron ni publicaron datos de MariaDB.
+
+Verificación ejecutada:
+
+- Backend en el entorno virtual Windows: **254 aprobadas, 3 omitidas** por ausencia del paquete documental privado; una advertencia de deprecación de PydanticGraph. Incluye regresiones para retirar la URL secundaria sin cambiar la principal, conservar secretos y aprovisionar una sola base (sin acceso real a un servidor en esa prueba).
+- Compose de producción, local y prueba humana: `config --quiet` correcto con el único campo `DATABASE_URL`. El perfil Python de producción también se validó con los 15 campos canónicos.
+- Imagen Docker reconstruida y API local recreada con su volumen persistente: contenedor saludable, `/health/live` y `/health/ready` con HTTP 200, `/api/config` con `available: true`. El portal local respondió HTTP 200.
+- La versión activa `16d7029f120c49aa84b7be74974a89de` mantiene **360 fragmentos en MariaDB y 360 vectores en LanceDB**, idénticos antes y después de recrear la API.
+
+No se solicitaron generaciones a Ollama ni se desplegó en Coolify durante esta verificación. Esta validación de configuración y arranque local no certifica una puesta en producción remota.
+
 ## Migración de SQLite a MariaDB · 20/10/2026
 
 Esta es la verificación vigente del backend local y sustituye las referencias anteriores a SQLite como base de ejecución. Se tomó la URL de conexión autorizada de `sample-backend` solo para aprovisionar dos esquemas nuevos y aislados (`gianna_invest` y `gianna_invest_human_test`) y una cuenta de aplicación con privilegios limitados. No se usaron ni alteraron el esquema `buzon-ciudadano` ni sus tablas. Las URLs quedaron en el `.env` local; se conservaron `SECRET_KEY`, `ENCRYPTION_KEY`, el modelo, Ollama y SMTP. El `.env` tiene respaldo local excluido de Git.
@@ -12,7 +27,7 @@ La suite del backend ejecutada sobre la imagen Linux: **246 aprobadas, 3 omitida
 
 ## Configuración simplificada a partir de `sample-backend` · 20/10/2026
 
-Antecedente inmediatamente anterior a MariaDB: se adoptó la organización de Flask del proyecto de referencia, no sus credenciales ni servicios ajenos a Gianna. En esa etapa el `.env` pasó de 30 a **14 campos**; la migración descrita arriba añadió las dos URLs de base dedicadas, por lo que el archivo actual tiene 16 variables. Se eliminaron las opciones obsoletas de Qdrant/E5 y parámetros operativos que ya tienen valores predeterminados. Los perfiles desarrollo/producción/pruebas viven en `gianna/config_profiles.py`; `gianna/config.py` mantiene compatibilidad con nombres anteriores. El motor RAG y los modelos no cambiaron.
+Antecedente inmediatamente anterior a MariaDB: se adoptó la organización de Flask del proyecto de referencia, no sus credenciales ni servicios ajenos a Gianna. En esa etapa el `.env` pasó de 30 a **14 campos**; la migración descrita arriba añadió inicialmente dos URLs de base dedicadas y lo llevó a 16 variables. Se eliminaron las opciones obsoletas de Qdrant/E5 y parámetros operativos que ya tienen valores predeterminados. Los perfiles desarrollo/producción/pruebas viven en `gianna/config_profiles.py`; `gianna/config.py` mantiene compatibilidad con nombres anteriores. El motor RAG y los modelos no cambiaron.
 
 Migración ejecutada con `python -m scripts.simplify_env --apply`: configuración efectiva equivalente; comprobación adicional de igualdad de `SECRET_KEY`, `ENCRYPTION_KEY`, token y modelo de Ollama y contraseña de correo. Respaldo local `.env.before-simplify-20261020T171723582005Z`, excluido de Git y Docker. El migrador rechaza opciones desconocidas, duplicadas o personalizadas que no pueda retirar sin cambios. El generador de instalaciones nuevas sigue negándose a sobrescribir `.env` o rotar claves existentes. `sample-backend/` se excluyó de Git y del contexto de construcción del portal; no se modificó ningún archivo de referencia.
 

@@ -14,6 +14,8 @@ El Compose usa referencias `${VARIABLE}` explícitas para que Coolify las descub
 
 Variables mínimas:
 
+Cada instalación configura una única `DATABASE_URL` para su base MariaDB. La preparación del recurso de producción no requiere variables de base de datos para pruebas.
+
 ```dotenv
 FLASK_ENV=production
 SECRET_KEY=<generada por setup_env.py>
