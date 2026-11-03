@@ -1,5 +1,15 @@
 # Validación del agente RAG
 
+## Barreras para consultas sobre menores · 02/11/2026
+
+En una copia local del backend `ad817d1` se agregaron rutas previas a la búsqueda para rechazar explotación explícita y continuaciones vinculadas, y pedir una aclaración neutral sobre locales o eventos juveniles ambiguos. Las reglas no usan la orientación sexual como señal de riesgo. Las respuestas de estas rutas no incluyen el aviso documental ni citas.
+
+Revisión del 03/11: **70 pruebas focalizadas aprobadas** (`tests/test_agent.py` y `tests/test_safety_http.py`). Se añadieron ejemplos de solicitudes mixtas de denuncia y daño, edades sin «años», continuaciones de ubicación y consultas legítimas de prevención. Las pruebas utilizan dobles y no prueban cobertura semántica completa. También se inició una instalación Docker local con MariaDB aislada y 332 registros públicos de prueba; se verificaron por HTTP un caso de aclaración y uno de rechazo sin llamar al proveedor. La publicación técnica de prueba no equivale a aprobación editorial.
+
+Prueba local posterior: **59 pruebas del agente y HTTP aprobadas**, incluyendo las tres consultas informadas, seguimientos, edades sin la palabra «años», prevención, denuncia mezclada con planificación y respuesta sin base activa. Las rutas HTTP utilizaron Flask, sesiones y CAPTCHA de prueba, SQLite temporal y proveedor simulado. No hubo acceso a la base real, LanceDB ni Ollama; las pruebas no acreditan cobertura semántica completa.
+
+`python -m pytest -q tests/test_agent.py`: **43 aprobadas**, con dobles para buscador y proveedor. La ejecución general anterior a las últimas tres pruebas terminó con **200 aprobadas, 5 fallidas y 15 omitidas** en Windows/Python 3.11: faltan `tzdata` y `pyarrow`, una prueba de reemplazo de archivo recibió acceso denegado y otra de aprovisionamiento terminó sin revelar el detalle interno. Las omisiones incluyen el corpus privado y MariaDB Docker. No se ejecutaron consultas reales a Ollama, una evaluación adversarial semántica, Docker ni la lista de comprobación de producción para este cambio. Las reglas locales y las pruebas no garantizan detectar todas las formas de abuso o preservar todos los casos legítimos; requieren evaluación y revisión humana antes del despliegue.
+
 **Fecha:** 29/10/2026. **Alcance:** cambios locales; sin push, despliegue ni cambios en producción. La base de prueba local no tiene revisión editorial final.
 
 Este informe describe el código actual. El informe del diseño anterior (planificador determinista) está en [historico/VALIDACION_agente_anterior.md](historico/VALIDACION_agente_anterior.md) y no aplica.
