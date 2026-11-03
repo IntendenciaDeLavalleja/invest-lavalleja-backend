@@ -123,7 +123,7 @@ class Agent:
 
     def run(self, question, settings, history, version_id=None):
         started = time.monotonic()
-        gate = hard_gate(question)
+        gate = hard_gate(question, history)
         if gate:
             return Result(MESSAGES[gate], gate, [], {'gate': gate}, {})
         social = is_social(question)

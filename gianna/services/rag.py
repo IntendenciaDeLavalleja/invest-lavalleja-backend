@@ -7,6 +7,7 @@ from ..errors import DomainError
 from ..security import keyed_hash
 from .agent import Agent
 from .retrieval import Retriever
+from .safety import hard_gate
 
 LOG = logging.getLogger(__name__)
 
@@ -51,15 +52,16 @@ class RAG:
         started = time.perf_counter()
         status, error_code, result = 'error', None, None
         try:
-            active = self.db.one('SELECT * FROM versions WHERE id=?', (version_id,)) if version_id else self.knowledge.active()
-            if not active:
-                raise DomainError('Todavía no hay una base publicada.', 503, 'no_knowledge')
-            version_id = active['id']
+            if not hard_gate(question, history or []):
+                active = self.db.one('SELECT * FROM versions WHERE id=?', (version_id,)) if version_id else self.knowledge.active()
+                if not active:
+                    raise DomainError('Todavía no hay una base publicada.', 503, 'no_knowledge')
+                version_id = active['id']
             result = self.agent.run(question, settings, history or [], version_id)
             status = result.status
             return {
                 'id': query_id, 'answer': result.answer, 'citations': [self.citation(c) for c in result.cards],
-                'status': status, 'mode': 'knowledge', 'notice': settings.knowledge_notice, 'version_id': version_id,
+                'status': status, 'mode': 'knowledge', 'notice': '' if result.trace.get('gate') else settings.knowledge_notice, 'version_id': version_id,
                 'opportunity_ids': list(dict.fromkeys(c['opportunity_id'] for c in result.cards if c.get('opportunity_id'))),
                 'follow_up': None, 'timings': {'total_ms': round((time.perf_counter() - started) * 1000, 1),
                                                'model_requests': result.requests},
