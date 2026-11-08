@@ -5,9 +5,10 @@ import time
 from ..db import dumps, uid
 from ..errors import DomainError
 from ..security import keyed_hash
-from .agent import Agent
+from .agent import Agent, Result
 from .retrieval import Retriever
-from .safety import hard_gate
+from .reranking import RerankBudget
+from ..observability import bind_context
 from .recovery import KnowledgeRecovery
 
 LOG = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class RAG:
 
     def retrieve(self, question, settings, version_id=None, **filters):
         """Fichas recuperadas sin llamar al modelo generativo (laboratorio y evaluación)."""
+        if 'rerank_budget' not in filters and settings.rerank_mode=='bounded':
+            filters['rerank_budget']=RerankBudget(settings.rerank_budget_ms)
         cards, trace = self.retriever.search(question, settings, version_id, **filters)
         return cards, trace['ms']
 
@@ -55,13 +58,17 @@ class RAG:
         started = time.perf_counter()
         status, error_code, result = 'error', None, None
         try:
-            if not hard_gate(question, history or []):
+            with bind_context(query_id=query_id, phase='safety'):
+                assessment = self.agent.assess(question, settings, history or [])
+            if not isinstance(assessment, Result):
+                result = Result('', 'error', [], {'safety':assessment.trace()}, assessment.usage, assessment.requests)
                 active = self.db.one('SELECT * FROM versions WHERE id=?', (version_id,)) if version_id else self.knowledge.active()
                 if not active:
                     raise DomainError('Todavía no hay una base publicada.', 503, 'no_knowledge')
                 version_id = active['id']
                 self.recovery.require(active)
-            result = self.agent.run(question, settings, history or [], version_id)
+            with bind_context(query_id=query_id, phase='answer'):
+                result = self.agent.run(question, settings, history or [], version_id, assessment=assessment)
             status = result.status
             return {
                 'id': query_id, 'answer': result.answer, 'citations': [self.citation(c) for c in result.cards],
@@ -69,9 +76,12 @@ class RAG:
                 'opportunity_ids': list(dict.fromkeys(c['opportunity_id'] for c in result.cards if c.get('opportunity_id'))),
                 'follow_up': None, 'timings': {'total_ms': round((time.perf_counter() - started) * 1000, 1),
                                                'model_requests': result.requests},
+                '_safety':result.trace.get('safety', {}),
             }
         except DomainError as exc:
             error_code = exc.code
+            if hasattr(exc, 'safety_trace'):
+                result = Result('', 'error', [], {'safety':exc.safety_trace}, exc.safety_usage, 1)
             raise
         finally:
             self.semaphore.release()
@@ -83,7 +93,8 @@ class RAG:
         trace = result.trace if result else {}
         usage = result.usage if result else {}
         # La consulta del usuario nunca se guarda en claro: solo hash, ids y tiempos.
-        stored = {**trace, 'searches': [{k: v for k, v in s.items() if k != 'query'} for s in trace.get('searches', [])]}
+        stored = {**trace, 'model_requests':result.requests if result else 0,
+                  'searches': [{k: v for k, v in s.items() if k != 'query'} for s in trace.get('searches', [])]}
         try:
             self.db.execute(
                 'INSERT INTO queries(id,at,session_hash,version_id,mode,status,topic,retrieval_ms,generation_ms,total_ms,source_ids_json,'

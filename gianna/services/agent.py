@@ -1,8 +1,8 @@
 """Agente RAG con herramientas: recuperación inicial garantizada + bucle acotado de búsquedas.
 
 Flujo de cada consulta:
-  1. Compuerta de seguridad determinista (insultos, delitos, acusaciones).
-  2. Búsqueda híbrida inicial sobre la pregunta (con contexto si es un seguimiento corto).
+  1. Rechazos seguros y evaluación semántica previa a cualquier orientación.
+  2. Búsqueda híbrida inicial con reranker opcional y presupuesto por respuesta.
   3. El modelo ve la evidencia numerada y puede buscar más (`buscar_en_la_guia`) o leer
      una ficha (`ver_ficha`) hasta MAX_STEPS veces.
   4. Se validan las citas [n] contra la evidencia realmente recuperada y se arma la respuesta.
@@ -17,6 +17,8 @@ from ..errors import DomainError
 from .conversation import fold, is_social
 from .prompts import CITATION_NUDGE, FINAL_NUDGE, TOOLS, system_prompt
 from .safety import MESSAGES, hard_gate
+from .risk import assess as assess_risk
+from .reranking import RerankBudget
 
 MAX_STEPS = 4
 DEADLINE_SECONDS = 100
@@ -121,22 +123,39 @@ class Agent:
         _, outline = self.retriever.outline(version_id)
         return system_prompt(settings, ZONES, outline)
 
-    def run(self, question, settings, history, version_id=None):
-        started = time.monotonic()
+    def assess(self, question, settings, history):
         gate = hard_gate(question, history)
         if gate:
-            return Result(MESSAGES[gate], gate, [], {'gate': gate}, {})
+            return Result(MESSAGES[gate], gate, [], {'gate': gate, 'safety':{
+                'policy':'semantic-safety-v1', 'source':'hard_block', 'decision':gate,
+                'model_evaluated':False, 'requests':0}}, {})
+        assessment = assess_risk(self.ollama, question, history, settings)
+        if assessment.decision != 'allow':
+            return Result(assessment.message(), assessment.decision, [],
+                          {'gate':assessment.decision, 'safety':assessment.trace()},
+                          assessment.usage, assessment.requests)
+        return assessment
+
+    def run(self, question, settings, history, version_id=None, *, assessment=None):
+        assessment = assessment if assessment is not None else self.assess(question, settings, history)
+        if isinstance(assessment, Result):
+            return assessment
+        started = assessment.started
+        rerank_budget = (RerankBudget(timeout_ms=min(settings.rerank_budget_ms,
+                            max(0, (DEADLINE_SECONDS-(time.monotonic()-started))*1000)))
+                         if settings.rerank_mode=='bounded' else None)
         social = is_social(question)
         evidence = Evidence()
-        trace = {'searches': [], 'steps': 0}
-        usage = {'prompt_tokens': 0, 'output_tokens': 0}
-        requests = 0
+        trace = {'searches': [], 'steps': 0, 'safety':assessment.trace()}
+        usage = {key:assessment.usage.get(key) or 0 for key in ('prompt_tokens','output_tokens')}
+        requests = assessment.requests
         messages = [{'role': 'system', 'content': self.prompt(settings, version_id)},
                     *({'role': m['role'], 'content': m['content']} for m in history),
                     {'role': 'user', 'content': question}]
         if not social:
             query = self.contextual_query(question, history)
-            cards, search_trace = self.retriever.search(query, settings, version_id, limit=settings.retrieval_limit)
+            cards, search_trace = self.retriever.search(query, settings, version_id, limit=settings.retrieval_limit,
+                                                      rerank_budget=rerank_budget)
             trace['searches'].append(search_trace)
             messages += [
                 {'role': 'assistant', 'content': '', 'tool_calls': [
@@ -147,6 +166,8 @@ class Agent:
         try:
             for step in range(MAX_STEPS):
                 remaining = DEADLINE_SECONDS - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise DomainError('Se agotó el tiempo para procesar la consulta.',503,'ollama_unavailable')
                 final = step == MAX_STEPS - 1 or remaining < 25 or evidence.chars > MAX_EVIDENCE_CHARS
                 message, part, model = self.ollama.chat(
                     messages, settings, tools=None if final or social else TOOLS, timeout=max(10, min(75, remaining)))
@@ -160,7 +181,8 @@ class Agent:
                     messages.append({'role': 'assistant', 'content': message['content'], 'tool_calls': calls})
                     for call in calls[:6]:
                         messages.append({'role': 'tool', 'tool_name': call['function']['name'],
-                                         'content': self.execute(call, evidence, settings, version_id, trace)})
+                                         'content': self.execute(call, evidence, settings, version_id, trace,
+                                                                 rerank_budget=rerank_budget)})
                     continue
                 answer = message['content'].strip()
                 if answer:
@@ -215,7 +237,7 @@ class Agent:
         trace['cited'] = [c['record_id'] for c in cards]
         return Result('\n'.join(lines), 'degraded', cards, trace, usage, requests)
 
-    def execute(self, call, evidence, settings, version_id, trace):
+    def execute(self, call, evidence, settings, version_id, trace, *, rerank_budget=None):
         name = call['function']['name']
         args = _args(call)
         try:
@@ -226,7 +248,8 @@ class Agent:
                 zones = args.get('zonas') if isinstance(args.get('zonas'), list) else []
                 kind = args.get('tipo') if args.get('tipo') in {'oportunidad', 'zona', 'ejemplo', 'ficha'} else None
                 cards, search_trace = self.retriever.search(query, settings, version_id, zones=zones,
-                                                            kinds=[kind] if kind else None, limit=settings.retrieval_limit)
+                                                            kinds=[kind] if kind else None, limit=settings.retrieval_limit,
+                                                            rerank_budget=rerank_budget)
                 trace['searches'].append(search_trace)
                 return evidence.render(cards)
             if name == 'ver_ficha':
